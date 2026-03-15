@@ -1,0 +1,990 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ollama LLM Workbench — Professional</title>
+<meta name="description" content="Professional local LLM benchmarking, resource monitoring, temperature experiments, and model comparison.">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+<style>
+:root{
+  --bg:#080810;--surface:#0f0f1a;--surface2:#161625;--surface3:#1d1d30;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+  --text:#e2e2f0;--text-dim:#6b6b88;--text-muted:#3a3a52;
+  --accent:#7c3aed;--accent2:#4f46e5;--accent3:#06b6d4;
+  --green:#10b981;--red:#ef4444;--yellow:#f59e0b;--blue:#3b82f6;--orange:#f97316;
+  --radius:14px;--radius-sm:8px;--mono:'JetBrains Mono',monospace;
+  --shadow:0 4px 24px rgba(0,0,0,0.5);--glow:0 0 20px rgba(124,58,237,0.2);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;overflow:hidden}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);display:flex;flex-direction:column}
+
+/* ── Progress bar ── */
+#progress-bar{position:fixed;top:0;left:0;height:2px;width:0%;background:linear-gradient(90deg,var(--accent),var(--accent3));z-index:9999;transition:width 0.3s ease;pointer-events:none}
+
+/* ── Toasts ── */
+#toast-container{position:fixed;top:16px;right:16px;z-index:9000;display:flex;flex-direction:column;gap:8px}
+.toast{background:var(--surface2);border:1px solid var(--border2);border-radius:10px;padding:10px 16px;font-size:.8rem;font-weight:600;animation:slideIn .25s ease;min-width:220px;box-shadow:var(--shadow)}
+.toast.success{border-left:3px solid var(--green)}
+.toast.error{border-left:3px solid var(--red)}
+.toast.info{border-left:3px solid var(--accent)}
+@keyframes slideIn{from{opacity:0;transform:translateX(30px)}to{opacity:1;transform:translateX(0)}}
+
+/* ── Header ── */
+header{background:linear-gradient(135deg,#0c0c1e,#111128);border-bottom:1px solid var(--border);padding:0 20px;height:54px;display:flex;align-items:center;gap:16px;flex-shrink:0;position:relative}
+header::after{content:'';position:absolute;bottom:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),var(--accent3),transparent)}
+.logo{font-size:1rem;font-weight:800;background:linear-gradient(135deg,#a78bfa,#38bdf8);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;white-space:nowrap;margin-right:8px}
+.logo span{font-size:.6rem;font-weight:500;-webkit-text-fill-color:var(--text-dim);margin-left:4px;vertical-align:middle}
+
+/* System pill in header */
+#sys-pill{display:flex;gap:10px;margin-left:auto;align-items:center}
+.sys-stat{font-size:.7rem;font-family:var(--mono);background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:3px 10px;display:flex;align-items:center;gap:5px;color:var(--text-dim)}
+.sys-stat b{color:var(--text);font-weight:600}
+.stat-dot{width:6px;height:6px;border-radius:50%;animation:pulse 2s infinite}
+.stat-dot.green{background:var(--green)}
+.stat-dot.yellow{background:var(--yellow)}
+.stat-dot.red{background:var(--red)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* ── Tabs ── */
+.tabs{display:flex;gap:1px;height:100%;align-items:stretch}
+.tab-btn{background:none;border:none;color:var(--text-dim);font-family:'Inter',sans-serif;font-size:.75rem;font-weight:600;padding:0 14px;cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;white-space:nowrap;display:flex;align-items:center;gap:5px}
+.tab-btn:hover{color:var(--text)}
+.tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
+.tab-icon{font-size:.85rem}
+
+/* ── Main layout ── */
+main{flex:1;overflow:hidden;position:relative}
+.panel{display:none;position:absolute;inset:0;overflow-y:auto;padding:20px;animation:fadeIn .2s ease}
+.panel.active{display:flex;flex-direction:column;gap:16px}
+@keyframes fadeIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+.panel::-webkit-scrollbar{width:4px}
+.panel::-webkit-scrollbar-track{background:transparent}
+.panel::-webkit-scrollbar-thumb{background:#333;border-radius:2px}
+
+/* ── Cards ── */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+.card-title{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-dim);margin-bottom:12px;display:flex;align-items:center;gap:6px}
+.card-title::before{content:'';display:inline-block;width:3px;height:12px;background:linear-gradient(180deg,var(--accent),var(--accent3));border-radius:2px}
+
+/* ── Grid helpers ── */
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.grid-auto{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.fill{flex:1;min-width:0}
+.section-desc{font-size:.8rem;color:var(--text-dim);line-height:1.6;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px;border-left:3px solid var(--accent)}
+
+/* ── Form controls ── */
+label{font-size:.72rem;font-weight:600;color:var(--text-dim);margin-bottom:4px;display:block}
+.field{display:flex;flex-direction:column}
+select,input[type="text"],input[type="number"],textarea{
+  background:var(--surface2);color:var(--text);border:1px solid var(--border);
+  border-radius:var(--radius-sm);padding:9px 12px;font-family:'Inter',sans-serif;
+  font-size:.82rem;outline:none;transition:border-color .2s,box-shadow .2s
+}
+select:focus,input:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(124,58,237,.15)}
+textarea{resize:vertical;min-height:54px;width:100%;line-height:1.5}
+
+/* Slider */
+.slider-row{display:flex;align-items:center;gap:8px}
+input[type="range"]{-webkit-appearance:none;appearance:none;width:110px;height:4px;background:var(--surface3);border-radius:2px;outline:none}
+input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--accent);cursor:pointer;box-shadow:0 0 6px rgba(124,58,237,.6)}
+.slider-val{font-family:var(--mono);font-size:.78rem;color:var(--accent);min-width:30px;font-weight:600}
+
+/* ── Buttons ── */
+.btn{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border:none;border-radius:var(--radius-sm);padding:9px 18px;font-family:'Inter',sans-serif;font-size:.82rem;font-weight:600;cursor:pointer;transition:transform .12s,opacity .2s,box-shadow .2s;white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
+.btn:hover{transform:scale(1.02);box-shadow:0 4px 15px rgba(124,58,237,.4)}
+.btn:active{transform:scale(.97)}
+.btn:disabled{opacity:.35;cursor:not-allowed;transform:none;box-shadow:none}
+.btn-sm{padding:7px 13px;font-size:.75rem}
+.btn-outline{background:transparent;border:1px solid var(--border2);color:var(--text-dim)}
+.btn-outline:hover{border-color:var(--accent);color:var(--accent);background:rgba(124,58,237,.07);box-shadow:none}
+.btn-danger{background:linear-gradient(135deg,#dc2626,#b91c1c)}
+.btn-cyan{background:linear-gradient(135deg,#0891b2,#0e7490)}
+
+/* ── Metric badges ── */
+.metrics-row{display:flex;gap:10px;flex-wrap:wrap}
+.metric{display:flex;flex-direction:column;align-items:center;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 16px;min-width:110px;position:relative;overflow:hidden}
+.metric::after{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--accent),var(--accent3))}
+.metric-val{font-family:var(--mono);font-size:1.3rem;font-weight:700;color:var(--accent)}
+.metric-lbl{font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-dim);margin-top:3px;text-align:center}
+.metric.green .metric-val{color:var(--green)}
+.metric.green::after{background:linear-gradient(90deg,var(--green),#059669)}
+.metric.yellow .metric-val{color:var(--yellow)}
+.metric.yellow::after{background:linear-gradient(90deg,var(--yellow),#d97706)}
+.metric.red .metric-val{color:var(--red)}
+.metric.red::after{background:linear-gradient(90deg,var(--red),#dc2626)}
+.metric.blue .metric-val{color:var(--blue)}
+.metric.blue::after{background:linear-gradient(90deg,var(--blue),#1d4ed8)}
+
+/* ── Quality badge ── */
+.quality-bar{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.q-badge{font-size:.68rem;font-family:var(--mono);background:var(--surface3);border:1px solid var(--border);border-radius:6px;padding:3px 8px;color:var(--text-dim)}
+.q-badge b{color:var(--text)}
+
+/* ── Chat ── */
+.chat-layout{flex:1;display:flex;flex-direction:column;gap:0;overflow:hidden}
+.chat-config{flex-shrink:0;margin-bottom:12px}
+.chat-area{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:4px 0}
+.chat-area::-webkit-scrollbar{width:4px}
+.chat-area::-webkit-scrollbar-thumb{background:#2a2a40;border-radius:2px}
+.msg{max-width:74%;padding:11px 15px;border-radius:14px;font-size:.87rem;line-height:1.6;white-space:pre-wrap;word-wrap:break-word;animation:fadeIn .2s ease;position:relative}
+.msg.user{align-self:flex-end;background:linear-gradient(135deg,#6d28d9,#4338ca);color:#fff;border-bottom-right-radius:3px}
+.msg.bot{align-self:flex-start;background:var(--surface);border:1px solid var(--border);border-bottom-left-radius:3px}
+.msg-meta{font-size:.62rem;color:rgba(255,255,255,.3);margin-top:5px;font-family:var(--mono)}
+.msg.bot .msg-meta{color:var(--text-dim)}
+.typing{align-self:flex-start;display:flex;gap:4px;padding:12px 16px;background:var(--surface);border-radius:14px;border-bottom-left-radius:3px;border:1px solid var(--border)}
+.typing span{width:6px;height:6px;background:#4a4a65;border-radius:50%;animation:bounce 1.4s infinite ease-in-out}
+.typing span:nth-child(2){animation-delay:.2s}
+.typing span:nth-child(3){animation-delay:.4s}
+@keyframes bounce{0%,80%,100%{transform:scale(.6);opacity:.4}40%{transform:scale(1);opacity:1}}
+.chat-bar{flex-shrink:0;display:flex;gap:8px;align-items:flex-end;padding-top:10px;border-top:1px solid var(--border)}
+.chat-bar textarea{flex:1;min-height:42px;max-height:110px}
+.welcome-msg{text-align:center;margin:auto;opacity:.4}
+.welcome-msg h2{font-size:1.1rem;margin-bottom:5px}
+.welcome-msg p{font-size:.8rem}
+
+/* Compare grid in chat */
+.cmp-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;width:100%}
+.cmp-card{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px;animation:fadeIn .3s ease;position:relative}
+.cmp-card.winner{border-color:var(--green);box-shadow:0 0 12px rgba(16,185,129,.15)}
+.winner-badge{position:absolute;top:-8px;right:10px;background:var(--green);color:#fff;font-size:.6rem;font-weight:800;padding:2px 8px;border-radius:10px;text-transform:uppercase;letter-spacing:.05em}
+.cmp-model{font-size:.75rem;font-weight:700;color:var(--accent);margin-bottom:6px}
+.cmp-time{font-size:.68rem;font-family:var(--mono);color:var(--text-dim)}
+.cmp-body{font-size:.82rem;line-height:1.55;color:#bbb;white-space:pre-wrap;margin:8px 0}
+.cmp-metrics{display:flex;gap:6px;flex-wrap:wrap}
+.cmp-badge{font-family:var(--mono);font-size:.65rem;background:var(--surface);padding:3px 7px;border-radius:5px;color:var(--text-dim);border:1px solid var(--border)}
+
+/* ── Results area ── */
+.results{display:flex;flex-direction:column;gap:12px}
+
+/* ── Attempt cards ── */
+.attempt-card{background:var(--surface2);border-radius:var(--radius-sm);padding:12px;border-left:3px solid var(--text-muted)}
+.attempt-card.valid{border-left-color:var(--green)}
+.attempt-card.invalid{border-left-color:var(--red)}
+.attempt-num{font-size:.7rem;font-weight:700;text-transform:uppercase;color:var(--text-dim);margin-bottom:6px}
+
+/* ── JSON block ── */
+.json-block{background:#07070f;border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;font-family:var(--mono);font-size:.75rem;line-height:1.6;white-space:pre-wrap;overflow-x:auto;color:#818cf8;position:relative}
+.copy-btn{position:absolute;top:8px;right:8px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text-dim);font-size:.65rem;padding:3px 8px;cursor:pointer;font-family:'Inter',sans-serif;transition:all .2s}
+.copy-btn:hover{color:var(--accent);border-color:var(--accent)}
+
+/* ── Loading states ── */
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--accent);border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.shimmer{background:linear-gradient(90deg,var(--surface) 25%,var(--surface2) 50%,var(--surface) 75%);background-size:200% 100%;animation:shimmer 1.5s infinite}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.loading-card{height:80px;border-radius:var(--radius);animation:shimmer 1.5s infinite;background:linear-gradient(90deg,var(--surface) 25%,var(--surface2) 50%,var(--surface) 75%);background-size:200% 100%}
+
+/* ── Report table ── */
+.report-table{width:100%;border-collapse:collapse;font-size:.78rem}
+.report-table th,.report-table td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--border)}
+.report-table th{font-size:.67rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-dim);font-weight:700;background:var(--surface2)}
+.report-table td{font-family:var(--mono)}
+.report-table tr:hover td{background:rgba(255,255,255,.02)}
+.report-table .winner-cell{color:var(--green);font-weight:700}
+.report-table .good{color:var(--green)}
+.report-table .mid{color:var(--yellow)}
+.report-table .bad{color:var(--red)}
+
+/* ── Monitor panel gauges ── */
+.gauge-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.gauge-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;text-align:center}
+.gauge-ring{position:relative;width:100px;height:100px;margin:0 auto 10px}
+.gauge-ring svg{transform:rotate(-90deg)}
+.gauge-ring .track{fill:none;stroke:var(--surface3);stroke-width:8}
+.gauge-ring .fill{fill:none;stroke-width:8;stroke-linecap:round;transition:stroke-dashoffset .6s ease}
+.gauge-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.gauge-pct{font-family:var(--mono);font-size:1.1rem;font-weight:700}
+.gauge-sub{font-size:.6rem;color:var(--text-dim);font-weight:600;text-transform:uppercase;margin-top:1px}
+.gauge-label{font-size:.72rem;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em}
+.ram-bar-wrap{height:12px;background:var(--surface3);border-radius:6px;overflow:hidden;margin:8px 0}
+.ram-bar{height:100%;border-radius:6px;transition:width .6s ease;background:linear-gradient(90deg,var(--accent),var(--accent3))}
+.mem-table{width:100%;font-size:.75rem;border-collapse:collapse}
+.mem-table td{padding:7px 10px;border-bottom:1px solid var(--border);font-family:var(--mono)}
+.mem-table td:first-child{color:var(--accent);font-weight:600}
+
+/* ── Temp lab grid ── */
+.temp-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.temp-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;animation:fadeIn .3s ease}
+.temp-badge{font-family:var(--mono);font-size:1.4rem;font-weight:800;margin-bottom:4px}
+.diversity-chip{display:inline-block;font-size:.65rem;font-family:var(--mono);padding:2px 8px;border-radius:10px;font-weight:700;margin-top:6px}
+.div-low{background:rgba(239,68,68,.15);color:var(--red);border:1px solid rgba(239,68,68,.3)}
+.div-mid{background:rgba(245,158,11,.15);color:var(--yellow);border:1px solid rgba(245,158,11,.3)}
+.div-high{background:rgba(16,185,129,.15);color:var(--green);border:1px solid rgba(16,185,129,.3)}
+
+/* ── Chart containers ── */
+.chart-wrap{position:relative;height:180px}
+
+/* ── Matrix table ── */
+.matrix-table{width:100%;border-collapse:collapse;font-size:.75rem}
+.matrix-table th,.matrix-table td{padding:8px 10px;border:1px solid var(--border);text-align:center}
+.matrix-table th{background:var(--surface2);color:var(--text-dim);font-size:.65rem;text-transform:uppercase;font-weight:700}
+.matrix-table td{font-family:var(--mono)}
+.mat-cell-inner{font-size:.7rem;line-height:1.5}
+
+/* Status badges */
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:10px;font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.badge.ok{background:rgba(16,185,129,.15);color:var(--green);border:1px solid rgba(16,185,129,.3)}
+.badge.fail{background:rgba(239,68,68,.15);color:var(--red);border:1px solid rgba(239,68,68,.3)}
+.badge.warn{background:rgba(245,158,11,.15);color:var(--yellow);border:1px solid rgba(245,158,11,.3)}
+
+/* Collapsible */
+details summary{cursor:pointer;font-size:.76rem;color:var(--text-dim);font-weight:600;padding:4px 0;user-select:none}
+details summary:hover{color:var(--text)}
+</style>
+</head>
+<body>
+<div id="progress-bar"></div>
+<div id="toast-container"></div>
+<header>
+  <span class="logo">⚡ Ollama Workbench <span>v2.0</span></span>
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="chat"><span class="tab-icon">💬</span>Chat</button>
+    <button class="tab-btn" data-tab="benchmark"><span class="tab-icon">📊</span>Benchmark</button>
+    <button class="tab-btn" data-tab="temperature"><span class="tab-icon">🌡️</span>Temp Lab</button>
+    <button class="tab-btn" data-tab="compare"><span class="tab-icon">⚔️</span>Compare</button>
+    <button class="tab-btn" data-tab="study"><span class="tab-icon">📋</span>Study</button>
+    <button class="tab-btn" data-tab="monitor"><span class="tab-icon">🖥️</span>Monitor</button>
+  </div>
+  <div id="sys-pill">
+    <div class="sys-stat"><span class="stat-dot green" id="cpu-dot"></span>CPU <b id="hdr-cpu">…</b></div>
+    <div class="sys-stat"><span class="stat-dot green" id="ram-dot"></span>RAM <b id="hdr-ram">…</b></div>
+  </div>
+</header>
+
+<main>
+  <!-- ── CHAT ── -->
+  <div id="panel-chat" class="panel active" style="padding-bottom:0;gap:0;">
+    <div class="chat-config card">
+      <div class="row" style="align-items:center;">
+        <div class="field">
+          <label>Model</label>
+          <select id="chat-model">
+            <option value="llama3.2:1b">llama3.2:1b</option>
+            <option value="gemma:2b">gemma:2b</option>
+            <option value="tinyllama:latest">tinyllama:latest</option>
+            <option value="__compare__">⚔️ Compare All 3</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Temperature</label>
+          <div class="slider-row">
+            <input type="range" id="chat-temp" min="0" max="2" step="0.1" value="0.7">
+            <span class="slider-val" id="chat-temp-val">0.7</span>
+          </div>
+        </div>
+        <div class="field fill">
+          <label>System Prompt</label>
+          <input type="text" id="chat-sys" value="You are a helpful assistant." style="width:100%;">
+        </div>
+      </div>
+    </div>
+    <div class="chat-area" id="chat-area">
+      <div class="welcome-msg">
+        <h2>Chat with your Local LLMs</h2>
+        <p>Pick a model above — or choose <strong>Compare All 3</strong> to race them side-by-side.</p>
+      </div>
+    </div>
+    <div style="flex-shrink:0;padding:10px 0;">
+      <div class="chat-bar">
+        <textarea id="chat-input" rows="1" placeholder="Type your message… (Enter to send, Shift+Enter for newline)"></textarea>
+        <button class="btn" id="chat-send">Send</button>
+        <button class="btn btn-outline btn-sm" id="chat-clear">Clear</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── BENCHMARK ── -->
+  <div id="panel-benchmark" class="panel">
+    <p class="section-desc">Run a prompt through a single model and measure <strong>tokens/sec</strong>, <strong>TTFT</strong>, <strong>total latency</strong>, and <strong>response quality</strong>.</p>
+    <div class="card">
+      <div class="card-title">Configuration</div>
+      <div class="row" style="margin-bottom:10px;">
+        <div class="field">
+          <label>Model</label>
+          <select id="bench-model">
+            <option value="llama3.2:1b">llama3.2:1b</option>
+            <option value="gemma:2b">gemma:2b</option>
+            <option value="tinyllama:latest">tinyllama:latest</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Temperature</label>
+          <div class="slider-row">
+            <input type="range" id="bench-temp" min="0" max="2" step="0.1" value="0.7">
+            <span class="slider-val" id="bench-temp-val">0.7</span>
+          </div>
+        </div>
+        <div class="field">
+          <label>Runs</label>
+          <select id="bench-runs">
+            <option value="1" selected>1 run</option>
+            <option value="3">3 runs (avg)</option>
+            <option value="5">5 runs (avg)</option>
+          </select>
+        </div>
+      </div>
+      <div class="field" style="margin-bottom:10px;">
+        <label>Prompt</label>
+        <textarea id="bench-prompt" rows="2" placeholder="Enter a prompt to benchmark…">Explain what a neural network is in simple terms.</textarea>
+      </div>
+      <button class="btn" id="bench-run">▶ Run Benchmark</button>
+    </div>
+    <div id="bench-results" class="results"></div>
+  </div>
+
+  <!-- ── TEMP LAB ── -->
+  <div id="panel-temperature" class="panel">
+    <p class="section-desc">Run the <strong>same prompt at multiple temperatures</strong> and compare output diversity, verbosity, and creativity. Lexical diversity (&gt;0.7 = creative, &lt;0.4 = repetitive).</p>
+    <div class="card">
+      <div class="card-title">Experiment Configuration</div>
+      <div class="row" style="margin-bottom:10px;">
+        <div class="field">
+          <label>Model</label>
+          <select id="temp-model">
+            <option value="llama3.2:1b">llama3.2:1b</option>
+            <option value="gemma:2b">gemma:2b</option>
+            <option value="tinyllama:latest">tinyllama:latest</option>
+          </select>
+        </div>
+        <div class="field fill">
+          <label>Temperatures (comma-separated, 0–2)</label>
+          <input type="text" id="temp-vals" value="0, 0.3, 0.7, 1.0, 1.5" style="width:100%;">
+        </div>
+      </div>
+      <div class="field" style="margin-bottom:10px;">
+        <label>Prompt</label>
+        <textarea id="temp-prompt" rows="2" placeholder="Enter a prompt…">Write a short story about an AI that learns to paint.</textarea>
+      </div>
+      <button class="btn" id="temp-run">🌡️ Run Experiment</button>
+    </div>
+    <div id="temp-results" class="results"></div>
+  </div>
+
+  <!-- ── COMPARE ── -->
+  <div id="panel-compare" class="panel">
+    <p class="section-desc">Send a prompt to <strong>all models simultaneously</strong> (parallel execution). See who answers fastest, produces the richest response, and uses the most vocabulary.</p>
+    <div class="card">
+      <div class="card-title">Model Race</div>
+      <div class="row" style="margin-bottom:10px;">
+        <div class="field">
+          <label>Temperature</label>
+          <div class="slider-row">
+            <input type="range" id="cmp-temp" min="0" max="2" step="0.1" value="0.7">
+            <span class="slider-val" id="cmp-temp-val">0.7</span>
+          </div>
+        </div>
+        <div class="field fill">
+          <label>System Prompt</label>
+          <input type="text" id="cmp-sys" value="You are a helpful assistant." style="width:100%;">
+        </div>
+      </div>
+      <div class="field" style="margin-bottom:10px;">
+        <label>Prompt</label>
+        <textarea id="cmp-prompt" rows="2" placeholder="Enter a prompt to send to all models…">Explain the concept of recursion with a practical example.</textarea>
+      </div>
+      <button class="btn" id="cmp-run">⚔️ Race All Models</button>
+    </div>
+    <div id="cmp-results" class="results"></div>
+  </div>
+
+  <!-- ── STUDY ── -->
+  <div id="panel-study" class="panel">
+    <p class="section-desc">Run a standardized benchmark suite across all models. Generates a full report with <strong>latency (p50/p95)</strong>, <strong>throughput</strong>, <strong>memory usage</strong>, and <strong>quality scores</strong>.</p>
+    <div class="card">
+      <div class="card-title">Benchmark Study Configuration</div>
+      <div class="row" style="margin-bottom:10px;align-items:center;">
+        <div class="field">
+          <label>Prompts (max 35)</label>
+          <div class="slider-row">
+            <input type="range" id="study-count" min="5" max="35" step="5" value="10">
+            <span class="slider-val" id="study-count-val">10</span>
+          </div>
+        </div>
+        <div style="font-size:.75rem;color:var(--text-dim);" id="study-eta">⏱ ~2–4 min for 10 prompts × 3 models</div>
+      </div>
+      <div class="row" style="gap:8px;">
+        <button class="btn" id="study-run">▶ Run Study</button>
+        <button class="btn btn-outline btn-sm" id="study-load">📂 Load Previous</button>
+        <button class="btn btn-outline btn-sm" id="study-export" style="display:none;">⬇ Export JSON</button>
+      </div>
+    </div>
+    <div id="study-results" class="results"></div>
+  </div>
+
+  <!-- ── MONITOR ── -->
+  <div id="panel-monitor" class="panel">
+    <p class="section-desc">Live system resource monitor — auto-refreshes every <strong>3 seconds</strong>. Shows CPU, RAM, swap, process memory, and Ollama model VRAM usage.</p>
+    <div class="row" style="align-items:center;margin-bottom:4px;">
+      <button class="btn btn-sm btn-cyan" id="mon-refresh">↻ Refresh Now</button>
+      <span id="mon-time" style="font-size:.72rem;color:var(--text-dim);font-family:var(--mono);"></span>
+    </div>
+    <div class="gauge-grid" id="mon-gauges">
+      <div class="gauge-card">
+        <div class="gauge-label">CPU</div>
+        <div class="gauge-ring">
+          <svg viewBox="0 0 100 100" width="100" height="100">
+            <circle class="track" cx="50" cy="50" r="40"/>
+            <circle id="cpu-ring" class="fill" cx="50" cy="50" r="40" stroke="#7c3aed" stroke-dasharray="251.3" stroke-dashoffset="251.3"/>
+          </svg>
+          <div class="gauge-center"><span class="gauge-pct" id="cpu-pct">–</span><span class="gauge-sub">CPU %</span></div>
+        </div>
+        <div style="font-size:.7rem;color:var(--text-dim);margin-top:4px;" id="cpu-cores">–</div>
+      </div>
+      <div class="gauge-card">
+        <div class="gauge-label">RAM</div>
+        <div style="margin:14px 0 6px;">
+          <div style="display:flex;justify-content:space-between;font-size:.72rem;margin-bottom:4px;">
+            <span style="font-family:var(--mono);" id="ram-used">–</span>
+            <span style="color:var(--text-dim);font-family:var(--mono);" id="ram-total">–</span>
+          </div>
+          <div class="ram-bar-wrap"><div class="ram-bar" id="ram-bar" style="width:0%"></div></div>
+          <div style="text-align:right;font-size:.68rem;color:var(--text-dim);" id="ram-pct">–</div>
+        </div>
+        <div style="font-size:.7rem;color:var(--text-dim);">Available: <span style="color:var(--text);font-family:var(--mono);" id="ram-avail">–</span></div>
+      </div>
+      <div class="gauge-card">
+        <div class="gauge-label">Swap</div>
+        <div style="margin:14px 0 6px;">
+          <div style="display:flex;justify-content:space-between;font-size:.72rem;margin-bottom:4px;">
+            <span style="font-family:var(--mono);" id="swap-used">–</span>
+            <span style="color:var(--text-dim);font-family:var(--mono);" id="swap-total">–</span>
+          </div>
+          <div class="ram-bar-wrap"><div class="ram-bar" id="swap-bar" style="width:0%;background:linear-gradient(90deg,var(--orange),var(--yellow))"></div></div>
+        </div>
+        <div style="font-size:.7rem;color:var(--text-dim);">Server process: <span style="color:var(--text);font-family:var(--mono);" id="proc-rss">–</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Loaded Ollama Models</div>
+      <div id="mon-models">
+        <div style="color:var(--text-dim);font-size:.82rem;">No models currently loaded in Ollama. Run a prompt to load one.</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">CPU & RAM History (last 20 readings)</div>
+      <div class="chart-wrap"><canvas id="mon-chart"></canvas></div>
+    </div>
+  </div>
+</main>
+<script>
+/* ── Globals ── */
+const MODELS_LIST = ['tinyllama:latest','llama3.2:1b','gemma:2b'];
+const MODEL_COLORS = {'tinyllama:latest':'#7c3aed','llama3.2:1b':'#3b82f6','gemma:2b':'#10b981'};
+let lastReport = null;
+let monitorChart = null;
+const monHistory = {cpu:[],ram:[],labels:[]};
+let monitorTimer = null;
+let studyExportData = null;
+
+/* ── Progress bar ── */
+function progressStart(){const b=document.getElementById('progress-bar');b.style.width='0%';b.style.transition='none';b.offsetWidth;b.style.transition='width 0.3s ease';b.style.width='70%';}
+function progressDone(){const b=document.getElementById('progress-bar');b.style.width='100%';setTimeout(()=>{b.style.transition='none';b.style.width='0%';},400);}
+
+/* ── Toast ── */
+function toast(msg,type='info',ms=3200){
+  const t=document.createElement('div');
+  t.className=`toast ${type}`;t.textContent=msg;
+  const c=document.getElementById('toast-container');c.appendChild(t);
+  setTimeout(()=>{t.style.opacity='0';t.style.transform='translateX(30px)';t.style.transition='all .3s ease';setTimeout(()=>t.remove(),300);},ms);
+}
+
+/* ── Helpers ── */
+function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+function mb(v){return v?`${v} MB`:'—';}
+function fmt(v,u=''){return v!=null&&v!==undefined?`${v}${u}`:'—';}
+function colorClass(v,low,high){return v>=high?'green':v>=low?'':'red';}
+
+async function api(url,body=null){
+  progressStart();
+  try{
+    const cfg=body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{};
+    const r=await fetch(url,cfg);
+    if(!r.ok)throw new Error(`HTTP ${r.status}`);
+    return await r.json();
+  }finally{progressDone();}
+}
+
+function loadingHtml(msg='Processing…'){return `<div class="card" style="text-align:center;padding:30px;"><span class="spinner"></span>${msg}</div>`;}
+function errHtml(msg){return `<div class="card" style="border-left:3px solid var(--red);"><span style="color:var(--red);font-weight:700;">⚠ Error:</span> ${esc(msg)}</div>`;}
+
+function copyBlock(text){
+  return `<button class="copy-btn" onclick="navigator.clipboard.writeText(${JSON.stringify(text)}).then(()=>toast('Copied!','success'))">Copy</button>`;
+}
+
+function metricCard(val,lbl,cls=''){
+  return `<div class="metric ${cls}"><span class="metric-val">${val}</span><span class="metric-lbl">${lbl}</span></div>`;
+}
+
+function qualityRow(q){
+  if(!q||!q.word_count)return '';
+  const div=q.lexical_diversity||0;
+  const divCls=div>=0.7?'div-high':div>=0.4?'div-mid':'div-low';
+  const divLbl=div>=0.7?'High Diversity':div>=0.4?'Medium Diversity':'Low Diversity';
+  return `<div class="quality-bar">
+    <span class="q-badge">Words: <b>${q.word_count}</b></span>
+    <span class="q-badge">Chars: <b>${q.char_count}</b></span>
+    <span class="q-badge">Sentences: <b>${q.sentence_count}</b></span>
+    <span class="q-badge">Avg Word: <b>${q.avg_word_length}</b> ch</span>
+    <span class="diversity-chip ${divCls}">Lexical ${divLbl} (${(div*100).toFixed(0)}%)</span>
+  </div>`;
+}
+
+function metricsRow(m,q){
+  const tpsClass=m.tokens_per_second>20?'green':m.tokens_per_second>8?'':' ';
+  const latClass=m.total_latency_s<2?'green':m.total_latency_s<6?'yellow':'red';
+  return `<div class="metrics-row">
+    ${metricCard(fmt(m.total_latency_s,'s'),'Total Latency',latClass)}
+    ${metricCard(fmt(m.time_to_first_token_s,'s'),'TTFT','')}
+    ${metricCard(fmt(m.tokens_per_second),'Tokens/sec',tpsClass)}
+    ${metricCard(fmt(m.tokens_generated),'Tokens Out','')}
+    ${metricCard(fmt(m.generation_time_s,'s'),'Gen Time','')}
+    ${metricCard(fmt(m.temperature),'Temperature','blue')}
+  </div>${qualityRow(q)}`;
+}
+
+/* ── Sliders ── */
+function bindSlider(sid,vid){
+  const s=document.getElementById(sid),v=document.getElementById(vid);
+  if(!s||!v)return;
+  s.addEventListener('input',()=>v.textContent=parseFloat(s.value).toFixed(1));
+}
+['chat-temp,chat-temp-val','bench-temp,bench-temp-val','cmp-temp,cmp-temp-val'].forEach(p=>{
+  const[s,v]=p.split(',');bindSlider(s,v);
+});
+
+/* ── Tab switching ── */
+document.querySelectorAll('.tab-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+    btn.classList.add('active');
+    const id='panel-'+btn.dataset.tab;
+    document.getElementById(id).classList.add('active');
+    if(btn.dataset.tab==='monitor')startMonitor();
+    else stopMonitor();
+  });
+});
+
+/* ── CHAT ── */
+const chatArea=document.getElementById('chat-area');
+const chatInput=document.getElementById('chat-input');
+document.getElementById('chat-clear').addEventListener('click',()=>{
+  chatArea.innerHTML='<div class="welcome-msg"><h2>Chat with your Local LLMs</h2><p>Pick a model above — or choose <strong>Compare All 3</strong> to race them side-by-side.</p></div>';
+});
+chatInput.addEventListener('input',()=>{chatInput.style.height='auto';chatInput.style.height=Math.min(chatInput.scrollHeight,110)+'px';});
+chatInput.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat();}});
+document.getElementById('chat-send').addEventListener('click',sendChat);
+
+async function sendChat(){
+  const prompt=chatInput.value.trim();if(!prompt)return;
+  const wel=chatArea.querySelector('.welcome-msg');if(wel)wel.remove();
+  appendMsg(prompt,'user');chatInput.value='';chatInput.style.height='auto';
+  const typing=document.createElement('div');
+  typing.className='typing';typing.innerHTML='<span></span><span></span><span></span>';
+  chatArea.appendChild(typing);chatArea.scrollTop=chatArea.scrollHeight;
+  const model=document.getElementById('chat-model').value;
+  const temp=parseFloat(document.getElementById('chat-temp').value);
+  const sys=document.getElementById('chat-sys').value;
+  document.getElementById('chat-send').disabled=true;
+  try{
+    if(model==='__compare__'){
+      const data=await api('/compare',{prompt,temperature:temp,system_prompt:sys});
+      typing.remove();appendCmpMsg(data.results);
+    }else{
+      const data=await api('/chat',{prompt,model_name:model,temperature:temp,system_prompt:sys});
+      typing.remove();
+      if(data.error)appendMsg('⚠ '+data.error,'bot');
+      else{
+        const m=data.metrics;
+        appendMsg(data.response,'bot',`${data.model} · ${m.total_latency_s}s · ${m.tokens_per_second} tok/s · temp ${m.temperature}`);
+      }
+    }
+  }catch(e){typing.remove();appendMsg('⚠ Could not connect to server.','bot');}
+  document.getElementById('chat-send').disabled=false;
+  chatInput.focus();
+}
+function appendMsg(text,role,meta){
+  const d=document.createElement('div');d.className='msg '+role;d.textContent=text;
+  if(meta){const m=document.createElement('div');m.className='msg-meta';m.textContent=meta;d.appendChild(m);}
+  chatArea.appendChild(d);chatArea.scrollTop=chatArea.scrollHeight;
+}
+function appendCmpMsg(results){
+  const fastest=results.filter(r=>!r.error).sort((a,b)=>a.metrics.total_latency_s-b.metrics.total_latency_s)[0];
+  const wrap=document.createElement('div');wrap.style.width='100%';wrap.style.animation='fadeIn .3s ease';
+  let h=`<div style="font-size:.7rem;color:var(--text-dim);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">⚔️ Model Race</div><div class="cmp-grid">`;
+  for(const r of results){
+    const isWinner=fastest&&r.model===fastest.model;
+    h+=`<div class="cmp-card${isWinner?' winner':''}">`;
+    if(isWinner)h+=`<div class="winner-badge">⚡ Fastest</div>`;
+    h+=`<div class="cmp-model">${r.model}</div>`;
+    if(r.error){h+=`<div class="cmp-body" style="color:var(--red);">⚠ ${esc(r.error)}</div>`;}
+    else{
+      h+=`<div class="cmp-body">${esc(r.response)}</div><div class="cmp-metrics">
+        <span class="cmp-badge">⏱ ${r.metrics.total_latency_s}s</span>
+        <span class="cmp-badge">TTFT ${r.metrics.time_to_first_token_s}s</span>
+        <span class="cmp-badge">${r.metrics.tokens_per_second} tok/s</span>
+        <span class="cmp-badge">${r.metrics.tokens_generated} tokens</span>`;
+      if(r.quality&&r.quality.lexical_diversity)h+=`<span class="cmp-badge">Div ${(r.quality.lexical_diversity*100).toFixed(0)}%</span>`;
+      h+='</div>';
+    }
+    h+='</div>';
+  }
+  h+='</div>';wrap.innerHTML=h;chatArea.appendChild(wrap);chatArea.scrollTop=chatArea.scrollHeight;
+}
+
+/* ── BENCHMARK ── */
+document.getElementById('bench-run').addEventListener('click',async()=>{
+  const container=document.getElementById('bench-results');
+  const model=document.getElementById('bench-model').value;
+  const temp=parseFloat(document.getElementById('bench-temp').value);
+  const prompt=document.getElementById('bench-prompt').value.trim();
+  const runs=parseInt(document.getElementById('bench-runs').value);
+  if(!prompt)return;
+  container.innerHTML=loadingHtml(`Benchmarking ${model} × ${runs} run(s)…`);
+  document.getElementById('bench-run').disabled=true;
+  try{
+    const allResults=[];
+    for(let i=0;i<runs;i++){
+      const d=await api('/benchmark',{prompt,model_name:model,temperature:temp,system_prompt:'You are a helpful assistant.'});
+      allResults.push(d);
+    }
+    const ok=allResults.filter(r=>!r.error);
+    if(ok.length===0){container.innerHTML=errHtml(allResults[0].error||'All runs failed');return;}
+    const avgM={
+      total_latency_s:+(ok.reduce((s,r)=>s+r.metrics.total_latency_s,0)/ok.length).toFixed(3),
+      time_to_first_token_s:+(ok.reduce((s,r)=>s+r.metrics.time_to_first_token_s,0)/ok.length).toFixed(3),
+      tokens_per_second:+(ok.reduce((s,r)=>s+r.metrics.tokens_per_second,0)/ok.length).toFixed(2),
+      tokens_generated:Math.round(ok.reduce((s,r)=>s+r.metrics.tokens_generated,0)/ok.length),
+      generation_time_s:+(ok.reduce((s,r)=>s+r.metrics.generation_time_s,0)/ok.length).toFixed(3),
+      temperature:temp,
+    };
+    const lastQ=ok[ok.length-1].quality||{};
+    container.innerHTML=`
+      <div class="card"><div class="card-title">${runs>1?`Average over ${ok.length} run(s) — `:''}${model}</div>
+        ${metricsRow(avgM,lastQ)}
+      </div>
+      <div class="card"><div class="card-title">Response</div>
+        <div style="font-size:.87rem;line-height:1.6;white-space:pre-wrap;position:relative;">
+          ${copies(ok[ok.length-1].response)}
+          ${esc(ok[ok.length-1].response)}
+        </div>
+      </div>`;
+    toast('Benchmark complete!','success');
+  }catch(e){container.innerHTML=errHtml('Server error: '+e.message);}
+  document.getElementById('bench-run').disabled=false;
+});
+
+function copies(text){return `<button class="copy-btn" onclick="navigator.clipboard.writeText(${JSON.stringify(text)}).then(()=>toast('Copied!','success'))">Copy</button>`;}
+
+/* ── TEMP LAB ── */
+document.getElementById('temp-run').addEventListener('click',async()=>{
+  const container=document.getElementById('temp-results');
+  const model=document.getElementById('temp-model').value;
+  const prompt=document.getElementById('temp-prompt').value.trim();
+  const temps=document.getElementById('temp-vals').value.split(',').map(t=>parseFloat(t.trim())).filter(t=>!isNaN(t));
+  if(!prompt||!temps.length)return;
+  container.innerHTML=loadingHtml(`Running ${temps.length} temperatures on ${model}…`);
+  document.getElementById('temp-run').disabled=true;
+  try{
+    const data=await api('/temperature-test',{prompt,model_name:model,temperatures:temps});
+    let h=`<div class="card"><div class="card-title">Temperature Experiment — ${model}</div></div><div class="temp-grid">`;
+    for(const r of data.results){
+      const t=r.metrics.temperature;
+      const q=r.quality||{};
+      const div=q.lexical_diversity||0;
+      const divCls=div>=0.7?'div-high':div>=0.4?'div-mid':'div-low';
+      const divLbl=div>=0.7?'Creative':div>=0.4?'Balanced':'Repetitive';
+      h+=`<div class="temp-card">
+        <div class="temp-badge" style="color:${t<=0.3?'var(--blue)':t<=0.7?'var(--accent)':t<=1.0?'var(--yellow)':'var(--red)'}">T = ${t}</div>
+        <div style="font-size:.62rem;color:var(--text-dim);margin-bottom:8px;">${t===0?'Deterministic':t<0.5?'Conservative':t<1.0?'Balanced':'High Creativity'}</div>`;
+      if(r.error){h+=`<div style="color:var(--red);font-size:.82rem;">⚠ ${esc(r.error)}</div>`;}
+      else{
+        h+=`<div style="font-size:.82rem;line-height:1.55;color:#ccc;white-space:pre-wrap;margin-bottom:8px;">${esc(r.response)}</div>
+        <div class="cmp-metrics">
+          <span class="cmp-badge">⏱ ${r.metrics.total_latency_s}s</span>
+          <span class="cmp-badge">${r.metrics.tokens_per_second} tok/s</span>
+          <span class="cmp-badge">${r.metrics.tokens_generated} tokens</span>
+          ${q.word_count?`<span class="cmp-badge">${q.word_count} words</span>`:''}
+        </div>
+        ${div?`<div style="margin-top:6px;"><span class="diversity-chip ${divCls}">${divLbl} — Lexical ${(div*100).toFixed(0)}%</span></div>`:''}`;
+      }
+      h+='</div>';
+    }
+    h+='</div>';container.innerHTML=h;
+    toast('Experiment complete!','success');
+  }catch(e){container.innerHTML=errHtml(e.message);}
+  document.getElementById('temp-run').disabled=false;
+});
+
+/* ── COMPARE ── */
+document.getElementById('cmp-run').addEventListener('click',async()=>{
+  const container=document.getElementById('cmp-results');
+  const prompt=document.getElementById('cmp-prompt').value.trim();
+  const temp=parseFloat(document.getElementById('cmp-temp').value);
+  const sys=document.getElementById('cmp-sys').value;
+  if(!prompt)return;
+  container.innerHTML=loadingHtml('Racing all models in parallel…');
+  document.getElementById('cmp-run').disabled=true;
+  try{
+    const data=await api('/compare',{prompt,temperature:temp,system_prompt:sys});
+    const results=data.results;
+    const ok=results.filter(r=>!r.error);
+    const fastest=ok.sort((a,b)=>a.metrics.total_latency_s-b.metrics.total_latency_s)[0];
+    const mostVerbose=ok.sort((a,b)=>(b.quality?.lexical_diversity||0)-(a.quality?.lexical_diversity||0))[0];
+
+    // KPI summary row
+    let h=`<div class="card"><div class="card-title">Race Summary — Temperature ${temp}</div>
+      <div class="metrics-row">
+        ${fastest?metricCard(fastest.model,'⚡ Fastest','green'):''}
+        ${mostVerbose?metricCard(mostVerbose.model,'🏆 Most Diverse','blue'):''}
+        ${metricCard(results.filter(r=>!r.error).length+'/'+results.length,'Succeeded','')}
+      </div>
+    </div>`;
+
+    h+=`<div class="cmp-grid">`;
+    for(const r of data.results){
+      const isF=fastest&&r.model===fastest.model;
+      const isD=mostVerbose&&r.model===mostVerbose.model&&r.model!==fastest?.model;
+      h+=`<div class="cmp-card${isF?' winner':''}">`;
+      if(isF)h+=`<div class="winner-badge">⚡ Fastest</div>`;
+      if(isD)h+=`<div class="winner-badge" style="background:var(--blue);">🏆 Most Diverse</div>`;
+      h+=`<div style="margin-bottom:4px;"><span class="cmp-model">${r.model}</span></div>`;
+      if(r.error){h+=`<div style="color:var(--red);font-size:.82rem;">⚠ ${esc(r.error)}</div>`;}
+      else{
+        const m=r.metrics,q=r.quality||{};
+        const lat=m.total_latency_s,tps=m.tokens_per_second;
+        h+=`<div class="cmp-metrics" style="margin-bottom:8px;">
+          <span class="cmp-badge" style="${lat<2?'color:var(--green)':lat<5?'color:var(--yellow)':'color:var(--red)'}">⏱ ${lat}s</span>
+          <span class="cmp-badge">TTFT ${m.time_to_first_token_s}s</span>
+          <span class="cmp-badge" style="${tps>20?'color:var(--green)':tps>8?'color:var(--yellow)':'color:var(--red)'}">${tps} tok/s</span>
+          <span class="cmp-badge">${m.tokens_generated} tokens</span>
+          ${q.lexical_diversity?`<span class="cmp-badge">Div ${(q.lexical_diversity*100).toFixed(0)}%</span>`:''}
+          ${q.word_count?`<span class="cmp-badge">${q.word_count} words</span>`:''}
+        </div>
+        <div style="font-size:.82rem;line-height:1.55;color:#ccc;white-space:pre-wrap;">${esc(r.response)}</div>`;
+      }
+      h+='</div>';
+    }
+    h+='</div>';
+    container.innerHTML=h;toast('Race complete!','success');
+  }catch(e){container.innerHTML=errHtml(e.message);}
+  document.getElementById('cmp-run').disabled=false;
+});
+
+/* ── STUDY ── */
+document.getElementById('study-count').addEventListener('input',()=>{
+  const n=parseInt(document.getElementById('study-count').value);
+  document.getElementById('study-count-val').textContent=n;
+  const est=Math.max(1,Math.round(n*3*6/60));
+  document.getElementById('study-eta').textContent=`⏱ ~${est}–${est+3} min for ${n} prompts × 3 models`;
+});
+document.getElementById('study-run').addEventListener('click',async()=>{
+  const container=document.getElementById('study-results');
+  const num=parseInt(document.getElementById('study-count').value);
+  container.innerHTML=loadingHtml(`Running ${num} prompts across 3 models — this may take several minutes…`);
+  document.getElementById('study-run').disabled=true;
+  try{
+    const data=await api('/study',{num_prompts:num});
+    lastReport=data;studyExportData=data;
+    renderReport(container,data);
+    document.getElementById('study-export').style.display='';
+    toast('Study complete! Report ready.','success');
+  }catch(e){container.innerHTML=errHtml(e.message);}
+  document.getElementById('study-run').disabled=false;
+});
+document.getElementById('study-load').addEventListener('click',async()=>{
+  const container=document.getElementById('study-results');
+  container.innerHTML=loadingHtml('Loading previous report…');
+  try{
+    const data=await api('/report');
+    if(data.error){container.innerHTML=errHtml(data.error);return;}
+    lastReport=data;studyExportData=data;renderReport(container,data);
+    document.getElementById('study-export').style.display='';
+    toast('Report loaded','info');
+  }catch(e){container.innerHTML=errHtml(e.message);}
+});
+document.getElementById('study-export').addEventListener('click',()=>{
+  if(!studyExportData)return;
+  const a=document.createElement('a');
+  a.href='data:application/json,'+encodeURIComponent(JSON.stringify(studyExportData,null,2));
+  a.download=`llm_study_${new Date().toISOString().slice(0,10)}.json`;
+  a.click();toast('Exported JSON','success');
+});
+
+function renderReport(container,report){
+  const models=Object.keys(report.models);
+  const COLORS=['#7c3aed','#3b82f6','#10b981'];
+
+  // Find best per-metric for winner highlighting
+  const bestTps=Math.max(...models.map(m=>report.models[m].avg_tokens_per_second||0));
+  const bestLat=Math.min(...models.map(m=>report.models[m].avg_latency_s||Infinity));
+  const hasMemory=models.some(m=>report.models[m].memory);
+
+  let h=`<div class="card"><div class="card-title">Study Report — ${report.timestamp}</div>
+    <p style="font-size:.8rem;color:var(--text-dim);margin-bottom:14px;">${report.num_prompts} prompts evaluated across ${models.length} models at temperature 0.0</p>
+    <div style="overflow-x:auto;">
+    <table class="report-table"><thead><tr>
+      <th>Model</th><th>Runs</th><th>Success</th>
+      <th>Avg Latency</th><th>p50 Lat</th><th>p95 Lat</th>
+      <th>Avg TTFT</th><th>Avg Tok/s</th><th>Avg Tokens</th>
+      <th>Quality Score</th><th>Avg Words</th>
+      ${hasMemory?'<th>Avg Mem</th><th>Peak Mem</th>':''}
+      <th>Errors</th>
+    </tr></thead><tbody>`;
+
+  for(const m of models){
+    const d=report.models[m];
+    const isBestTps=(d.avg_tokens_per_second||0)===bestTps;
+    const isBestLat=(d.avg_latency_s||Infinity)===bestLat;
+    const mem=d.memory;
+    const sr=d.success_rate_pct;
+    h+=`<tr>
+      <td style="color:var(--accent);font-weight:700;">${m}</td>
+      <td>${d.total_runs}</td>
+      <td><span class="${sr>=90?'good':sr>=60?'mid':'bad'}">${sr??0}%</span></td>
+      <td><span class="${isBestLat?'winner-cell':''}">${d.avg_latency_s??'—'}s</span></td>
+      <td>${d.p50_latency_s??'—'}s</td>
+      <td>${d.p95_latency_s??'—'}s</td>
+      <td>${d.avg_ttft_s??'—'}s</td>
+      <td><span class="${isBestTps?'winner-cell':''}">${d.avg_tokens_per_second??'—'}</span></td>
+      <td>${d.avg_tokens_generated??'—'}</td>
+      <td>${d.quality?.quality_score??'—'}%</td>
+      <td>${d.quality?.avg_word_count??'—'}</td>
+      ${hasMemory?`<td>${mem?mb(mem.avg_memory_mb):'—'}</td><td style="color:var(--yellow);">${mem?mb(mem.peak_memory_mb):'—'}</td>`:''}
+      <td style="color:${d.errors>0?'var(--red)':'var(--green)'};">${d.errors}</td>
+    </tr>`;
+  }
+  h+=`</tbody></table></div></div>`;
+
+  // Charts section
+  h+=`<div class="grid-3" id="study-charts-wrap">
+    <div class="card"><div class="card-title">Avg Tokens/Sec</div><div class="chart-wrap"><canvas id="chart-tps"></canvas></div></div>
+    <div class="card"><div class="card-title">Avg Latency (s)</div><div class="chart-wrap"><canvas id="chart-lat"></canvas></div></div>
+    <div class="card"><div class="card-title">Quality Score (%)</div><div class="chart-wrap"><canvas id="chart-qual"></canvas></div></div>
+  </div>`;
+  if(hasMemory){
+    h+=`<div class="card"><div class="card-title">Peak Memory (MB)</div><div class="chart-wrap" style="height:160px;"><canvas id="chart-mem"></canvas></div></div>`;
+  }
+
+  h+=`<details><summary>View Raw Report JSON</summary><div class="json-block" style="margin-top:8px;max-height:300px;overflow-y:auto;">${copies(JSON.stringify(report,null,2))}${esc(JSON.stringify(report,null,2))}</div></details>`;
+
+  container.innerHTML=h;
+
+  // Draw charts after DOM insertion
+  setTimeout(()=>{
+    const labels=models.map(m=>m.split(':')[0]);
+    const mkChart=(id,label,values,color)=>{
+      const ctx=document.getElementById(id);if(!ctx)return;
+      new Chart(ctx,{type:'bar',data:{labels,datasets:[{label,data:values,backgroundColor:COLORS,borderRadius:6,borderSkipped:false}]},
+        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#6b6b88',font:{size:10}}},y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#6b6b88',font:{size:10}}}}}});
+    };
+    mkChart('chart-tps','tok/s',models.map(m=>report.models[m].avg_tokens_per_second||0));
+    mkChart('chart-lat','latency (s)',models.map(m=>report.models[m].avg_latency_s||0));
+    mkChart('chart-qual','quality %',models.map(m=>report.models[m].quality?.quality_score||0));
+    if(hasMemory)mkChart('chart-mem','peak MB',models.map(m=>report.models[m].memory?.peak_memory_mb||0));
+  },50);
+}
+
+/* ── MONITOR ── */
+function startMonitor(){
+  refreshMonitor();
+  if(!monitorTimer)monitorTimer=setInterval(refreshMonitor,3000);
+}
+function stopMonitor(){
+  if(monitorTimer){clearInterval(monitorTimer);monitorTimer=null;}
+}
+document.getElementById('mon-refresh').addEventListener('click',refreshMonitor);
+
+async function refreshMonitor(){
+  try{
+    const d=await api('/system-stats');
+    const now=new Date().toLocaleTimeString();
+    document.getElementById('mon-time').textContent='Last updated: '+now;
+
+    // Header pills
+    document.getElementById('hdr-cpu').textContent=d.cpu.percent+'%';
+    document.getElementById('hdr-ram').textContent=Math.round(d.ram.used_mb/1024)+'G/'+Math.round(d.ram.total_mb/1024)+'G';
+    setDot('cpu-dot',d.cpu.percent>80?'red':d.cpu.percent>50?'yellow':'green');
+    setDot('ram-dot',d.ram.percent>85?'red':d.ram.percent>65?'yellow':'green');
+
+    // CPU gauge
+    const cpuPct=d.cpu.percent;
+    const circ=251.3;
+    const ring=document.getElementById('cpu-ring');
+    ring.style.strokeDashoffset=circ*(1-cpuPct/100);
+    ring.style.stroke=cpuPct>80?'#ef4444':cpuPct>50?'#f59e0b':'#7c3aed';
+    document.getElementById('cpu-pct').textContent=cpuPct+'%';
+    document.getElementById('cpu-pct').style.color=cpuPct>80?'var(--red)':cpuPct>50?'var(--yellow)':'var(--accent)';
+    document.getElementById('cpu-cores').textContent=`${d.cpu.count_physical}P / ${d.cpu.count_logical}L cores`;
+
+    // RAM
+    document.getElementById('ram-used').textContent=d.ram.used_mb+' MB';
+    document.getElementById('ram-total').textContent=d.ram.total_mb+' MB';
+    document.getElementById('ram-pct').textContent=d.ram.percent+'%';
+    document.getElementById('ram-avail').textContent=d.ram.available_mb+' MB';
+    const ramBar=document.getElementById('ram-bar');
+    ramBar.style.width=d.ram.percent+'%';
+    ramBar.style.background=d.ram.percent>85?'linear-gradient(90deg,var(--red),#dc2626)':d.ram.percent>65?'linear-gradient(90deg,var(--yellow),#d97706)':'linear-gradient(90deg,var(--accent),var(--accent3))';
+
+    // Swap
+    document.getElementById('swap-used').textContent=d.swap.used_mb+' MB';
+    document.getElementById('swap-total').textContent=d.swap.total_mb+' MB';
+    document.getElementById('swap-bar').style.width=d.swap.percent+'%';
+    document.getElementById('proc-rss').textContent=d.process.rss_mb+' MB';
+
+    // Model memory table
+    const mMod=document.getElementById('mon-models');
+    const mems=d.ollama_models;
+    if(!mems||!Object.keys(mems).length){
+      mMod.innerHTML='<div style="color:var(--text-dim);font-size:.82rem;">No models currently loaded.</div>';
+    }else{
+      let mt=`<table class="mem-table"><tr><th style="text-align:left;padding:6px 10px;font-size:.65rem;text-transform:uppercase;color:var(--text-dim);">Model</th><th>RAM (MB)</th><th>VRAM (MB)</th></tr>`;
+      for(const[name,mem] of Object.entries(mems)){
+        mt+=`<tr><td>${name}</td><td>${mem.size_mb}</td><td>${mem.size_vram_mb||'—'}</td></tr>`;
+      }
+      mt+='</table>';mMod.innerHTML=mt;
+    }
+
+    // History chart
+    const ts=now;
+    monHistory.labels.push(ts);monHistory.cpu.push(cpuPct);monHistory.ram.push(d.ram.percent);
+    if(monHistory.labels.length>20){monHistory.labels.shift();monHistory.cpu.shift();monHistory.ram.shift();}
+    updateMonChart();
+  }catch(e){document.getElementById('mon-time').textContent='Error: '+e.message;}
+}
+
+function setDot(id,color){const el=document.getElementById(id);if(!el)return;el.className='stat-dot '+color;}
+
+function updateMonChart(){
+  const ctx=document.getElementById('mon-chart');if(!ctx)return;
+  if(!monitorChart){
+    monitorChart=new Chart(ctx,{type:'line',
+      data:{labels:monHistory.labels,datasets:[
+        {label:'CPU %',data:monHistory.cpu,borderColor:'#7c3aed',backgroundColor:'rgba(124,58,237,.1)',fill:true,tension:.4,pointRadius:2},
+        {label:'RAM %',data:monHistory.ram,borderColor:'#3b82f6',backgroundColor:'rgba(59,130,246,.1)',fill:true,tension:.4,pointRadius:2},
+      ]},
+      options:{responsive:true,maintainAspectRatio:false,animation:{duration:0},
+        plugins:{legend:{labels:{color:'#6b6b88',font:{size:10}}}},
+        scales:{x:{ticks:{maxTicksLimit:6,color:'#6b6b88',font:{size:9}},grid:{color:'rgba(255,255,255,.04)'}},
+                y:{min:0,max:100,ticks:{color:'#6b6b88',font:{size:9}},grid:{color:'rgba(255,255,255,.04)'}}}},
+    });
+  }else{
+    monitorChart.data.labels=monHistory.labels;
+    monitorChart.data.datasets[0].data=monHistory.cpu;
+    monitorChart.data.datasets[1].data=monHistory.ram;
+    monitorChart.update('none');
+  }
+}
+
+/* ── Init ── */
+refreshMonitor(); // seed header pills on load
+chatInput.focus();
+</script>
+</body>
+</html>
