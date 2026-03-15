@@ -20,13 +20,28 @@ A **professional local LLM benchmarking and analysis tool** built on FastAPI + p
 ## 📸 Screenshots
 
 ### Chat + Live Header Pills
+![Chat Interface](assets/chat.png)
 > CPU % and RAM usage update every 3 seconds directly in the header. System prompt is editable inline.
 
-### Monitor Tab
-> Real-time SVG ring gauge for CPU, animated progress bars for RAM, swap, and an auto-updating Chart.js history graph. The loaded Ollama model table shows RAM and VRAM usage pulled directly from `ollama ps`.
+### Study Tab
+![Study Tab](assets/study.png)
+> Full benchmark suite across all models with p50/p95, quality scoring, charts, and JSON export.
 
-### Benchmark Results
+### Monitor Tab
+![Monitor Tab](assets/monitor.png)
+> Real-time SVG ring gauge for CPU, animated progress bars for RAM, swap, and an auto-updating Chart.js history graph. The loaded Ollama model table shows RAM and VRAM usage.
+
+### Benchmark Tab
+![Benchmark Tab](assets/benchmark.png)
 > Color-coded metric cards (green = fast, yellow = moderate, red = slow) with quality badges — word count, char count, sentence count, avg word length, and a **Lexical Diversity %** creativity indicator.
+
+### Temperature Lab
+![Temperature Lab](assets/temp_lab.png)
+> Run the same prompt at multiple temperatures and compare output diversity, verbosity, and creativity.
+
+### Compare Tab
+![Compare Tab](assets/compare.png)
+> Race all models **in parallel** — fastest and most diverse are highlighted with custom badges.
 
 ---
 
